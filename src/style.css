@@ -491,7 +491,7 @@ legend { font-weight: 900; font-size: 17px; margin-bottom: 6px; }
 .disclaimer { margin: 0; font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
 
 /* ---------- Wide screens: the Pokédex opens like a book ---------- */
-@media (min-width: 900px) and (min-aspect-ratio: 1/1) {
+@media (min-width: 700px) and (min-aspect-ratio: 1/1) {
   html, body { overflow: hidden; }
   .device {
     height: 100dvh;
@@ -511,9 +511,87 @@ legend { font-weight: 900; font-size: 17px; margin-bottom: 6px; }
   }
   .hinge i { display: block; height: 70px; margin: 0 5px; background: rgba(0,0,0,.25); border-radius: 4px; }
   .cam-bezel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .screen-stack { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .cam-screen { flex: 1; height: auto; min-height: 0; }
   .info-screen { flex: 1 1 0; min-height: 0; }
   .idle, .special { min-height: 100%; }
+}
+
+/* ---------- One-screen layout (phones, portrait iPad) ---------- */
+.back-cam { display: none; }
+body.stacked { overflow: hidden; }
+body.stacked .device { height: 100dvh; display: flex; flex-direction: column; }
+body.stacked .half.left { flex: 1; min-height: 0; gap: 10px; }
+body.stacked .half.right, body.stacked .hinge { display: none; }
+body.stacked .top { padding-bottom: 8px; }
+body.stacked .lens { width: clamp(48px, 8vh, 72px); }
+body.stacked .cam-bezel {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  padding: 8px 10px 10px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 26px 100%, 0 calc(100% - 26px));
+}
+body.stacked .bezel-dots { padding-bottom: 6px; }
+body.stacked .bezel-foot { display: none; }
+body.stacked .screen-stack { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body.stacked .cam-screen { flex: 1; height: auto; min-height: 0; }
+body.stacked .screen-stack > .info-screen {
+  position: absolute; inset: 0; z-index: 5;
+  border: 0; border-radius: 8px;
+  min-height: 0;
+  box-shadow: inset 0 0 0 3px #c7d3cb;
+  animation: openScreen .28s ease-out;
+}
+body.stacked .screen-stack:not(.show-info) > .info-screen { display: none; }
+@keyframes openScreen { from { transform: translateY(6%); opacity: 0; } }
+body.stacked .back-cam {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  position: sticky; bottom: 10px;
+  margin: 4px auto 12px;
+  border: 0; border-radius: 999px;
+  padding: 12px 24px;
+  font-weight: 900; font-size: 18px;
+  color: var(--ink);
+  background: var(--yellow);
+  box-shadow: 0 4px 0 #b58f00, 0 6px 16px rgba(0,0,0,.25);
+}
+body.stacked .back-cam svg { width: 22px; height: 22px; }
+body.stacked .back-cam:active { transform: translateY(3px); box-shadow: 0 1px 0 #b58f00; }
+body.stacked .idle, body.stacked .special { min-height: 100%; }
+body.stacked .controls { padding: 0 2px; }
+body.stacked .lcd { min-height: 44px; padding: 6px 10px; }
+body.stacked .big-btn { width: clamp(56px, 8vh, 76px); }
+body.stacked .dpad { width: clamp(76px, 10vh, 96px); }
+body.stacked .keys { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+body.stacked .key { min-height: 46px; padding: 6px 4px; font-size: 15px; }
+
+/* Short landscape screens (phones on their side): squeeze the chrome so the camera gets the room. */
+@media (max-height: 560px) and (min-width: 700px) and (min-aspect-ratio: 1/1) {
+  .device { padding: max(6px, env(safe-area-inset-top)) max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); grid-template-columns: 1fr 14px 1fr; }
+  .half { padding: 8px; gap: 8px; }
+  .half.right { margin-top: 0; }
+  .hinge { margin: 8px 0; padding: 12px 0; }
+  .hinge i { height: 40px; margin: 0 3px; }
+  .top { padding: 0 2px 4px; gap: 8px; }
+  .top::after { display: none; }
+  .lens { width: 34px; box-shadow: 0 2px 0 rgba(0,0,0,.3); }
+  .leds { padding-top: 0; align-self: center; gap: 5px; }
+  .led { width: 10px; height: 10px; border-width: 1px; }
+  .top h1 { font-size: 16px; }
+  .bezel { padding: 6px; clip-path: polygon(0 0, 100% 0, 100% 100%, 18px 100%, 0 calc(100% - 18px)); }
+  .bezel-dots, .bezel-foot, .pills, .right-top, .right-foot { display: none; }
+  .controls { gap: 8px; padding: 0; }
+  .big-btn { width: 46px; border-width: 3px; }
+  .dpad { width: 62px; }
+  .lcd { min-height: 34px; padding: 4px 8px; font-size: 13px; border-width: 2px; }
+  .info-screen { border-width: 6px; }
+  .keys { grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  .key { min-height: 36px; padding: 4px; font-size: 13px; }
+  .key span { display: none; }
+  .entry { padding: 10px; }
+  .name { font-size: 26px; }
+  .idle { font-size: 16px; padding: 8px; }
+  .radar { width: 60px; }
 }
 
 /* Small phones */
