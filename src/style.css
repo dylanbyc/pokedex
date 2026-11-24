@@ -486,6 +486,9 @@ legend { font-weight: 900; font-size: 17px; margin-bottom: 6px; }
 .seg input:checked + span { background: var(--blue); color: #fff; box-shadow: 0 2px 0 var(--blue-lo); }
 .switch-row { display: flex; align-items: center; justify-content: space-between; font-weight: 900; font-size: 17px; background: #fff; padding: 10px 14px; border-radius: 10px; }
 .switch-row input { width: 24px; height: 24px; accent-color: var(--blue); }
+.voice-row { display: flex; gap: 8px; }
+#voiceSel { flex: 1; min-width: 0; font: inherit; font-size: 16px; font-weight: 800; padding: 10px; border-radius: 10px; border: 2px solid #c9d6cf; background: #fff; color: var(--ink); }
+.try-btn { border: 0; border-radius: 10px; padding: 0 16px; background: var(--blue); color: #fff; font-weight: 900; box-shadow: 0 2px 0 var(--blue-lo); }
 #aiKey { font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 10px; border: 2px solid #c9d6cf; -webkit-user-select: text; user-select: text; }
 .danger { border: 0; border-radius: 10px; padding: 12px; background: #fff; color: var(--red); font-weight: 900; box-shadow: 0 2px 0 #c9d6cf; }
 .disclaimer { margin: 0; font-size: 12px; color: var(--ink-soft); line-height: 1.5; }

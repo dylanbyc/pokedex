@@ -4,7 +4,7 @@ import { t, statLabels, type Key } from './i18n';
 import { NameMatcher, Voter, detectSpecial, type CardLang, type SpecialCard } from './match';
 import { Camera, rotated } from './camera';
 import { Ocr } from './ocr';
-import { speak, stopSpeaking, unlockSpeech, speechSupported } from './speech';
+import { speak, stopSpeaking, unlockSpeech, speechSupported, listVoices, setVoiceChoice } from './speech';
 import { beepFound, beepMiss, beepTap, unlockAudio } from './sound';
 import { getItem, setItem } from './storage';
 
@@ -23,6 +23,7 @@ const settings = {
   autoScan: getItem('dex.autoScan', true),
   voice: getItem('dex.voice', true),
   aiKey: getItem('dex.aiKey', ''),
+  voices: getItem<Partial<Record<Lang, string>>>('dex.voices', {}),
 };
 const save = () => {
   setItem('dex.lang', settings.lang);
@@ -30,6 +31,7 @@ const save = () => {
   setItem('dex.autoScan', settings.autoScan);
   setItem('dex.voice', settings.voice);
   setItem('dex.aiKey', settings.aiKey);
+  setItem('dex.voices', settings.voices);
 };
 
 const seen = new Set<number>(getItem<number[]>('dex.seen', []));
@@ -88,12 +90,33 @@ function setStatus(msg: string, raw = '') {
 
 const fmt = (n: number) => (Math.round(n) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 });
 
-function entrySpeech(s: Species, lang: Lang): string {
-  const name = s.n[lang], genus = s.g[lang] || s.g.en;
-  const flavor = s.f[lang] || s.f.en;
-  if (lang === 'en') return `${name}. The ${genus}. ${flavor}`;
-  if (lang === 'ja') return `${name}。${genus}。${flavor.replace(/　/g, ' ')}`;
-  return `${name}，${genus}。${flavor}`;
+/**
+ * The entry as the anime's Pokédex reads it: name, pause, category, pause,
+ * then the entry text. Text missing in this language is skipped rather than
+ * read in another language's voice.
+ */
+function entrySpeech(s: Species, lang: Lang): string[] {
+  const name = s.n[lang];
+  const genus = s.g[lang];
+  const flavor = s.f[lang];
+  const parts =
+    lang === 'en'
+      ? [`${name}.`, genus && `The ${genus}.`, flavor]
+      : [`${name}。`, genus && `${genus}。`, flavor];
+  return parts.filter((x): x is string => !!x);
+}
+
+let speakTimer = 0;
+/** Speaks after a short pause so the scan chime finishes first. */
+function speakSoon(parts: string | string[], lang: Lang, delay = 650) {
+  clearTimeout(speakTimer);
+  stopSpeaking();
+  speakTimer = window.setTimeout(() => speak(parts, lang), delay);
+}
+
+function silence() {
+  clearTimeout(speakTimer);
+  stopSpeaking();
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -203,7 +226,7 @@ function showEntry(id: number, opts: { isNew?: boolean; announce?: boolean } = {
   }
 
   $('info').scrollTop = 0;
-  if (opts.announce && settings.voice) speak(entrySpeech(s, L), L);
+  if (opts.announce && settings.voice) speakSoon(entrySpeech(s, L), L);
 }
 
 function showSpecial(kind: SpecialCard) {
@@ -216,7 +239,7 @@ function showSpecial(kind: SpecialCard) {
   const inner = el('div');
   inner.append(el('span', 'big-emoji', kind === 'energy' ? '⚡' : '🎒'), document.createTextNode(t(kind, settings.lang)));
   box.append(inner);
-  if (settings.voice) speak(t(kind, settings.lang), settings.lang);
+  if (settings.voice) speakSoon(t(kind, settings.lang), settings.lang);
 }
 
 // Wide landscape screens show two halves side by side. Everywhere else the
@@ -453,10 +476,10 @@ function step(delta: number) {
 
 function wire() {
   $('startBtn').onclick = startScanning;
-  $('againBtn').onclick = () => { beepTap(); stopSpeaking(); resetLock(); };
+  $('againBtn').onclick = () => { beepTap(); silence(); resetLock(); };
   $('backCam').onclick = () => {
     beepTap();
-    stopSpeaking();
+    silence();
     hideInfo();
     if (lockedId !== null) resetLock();
   };
@@ -485,7 +508,7 @@ function wire() {
   $('speakBtn').hidden = !speechSupported;
   $('speakBtn').onclick = () => {
     unlockSpeech();
-    if (shownId) speak(entrySpeech(dex.species[shownId - 1], settings.lang), settings.lang);
+    if (shownId) speakSoon(entrySpeech(dex.species[shownId - 1], settings.lang), settings.lang, 0);
   };
 
   const browse = $<HTMLDialogElement>('browse');
@@ -500,6 +523,7 @@ function wire() {
     dlg.querySelectorAll<HTMLInputElement>('input[name=cardLang]').forEach((r) => (r.checked = r.value === settings.cardLang));
     $<HTMLInputElement>('autoScan').checked = settings.autoScan;
     $<HTMLInputElement>('voiceOn').checked = settings.voice;
+    fillVoices();
     $<HTMLInputElement>('aiKey').value = settings.aiKey;
     dlg.showModal();
   };
@@ -517,9 +541,19 @@ function wire() {
   $<HTMLInputElement>('autoScan').onchange = (e) => { settings.autoScan = (e.target as HTMLInputElement).checked; save(); };
   $<HTMLInputElement>('voiceOn').onchange = (e) => {
     settings.voice = (e.target as HTMLInputElement).checked;
-    if (!settings.voice) stopSpeaking();
+    if (!settings.voice) silence();
     save();
   };
+  $<HTMLSelectElement>('voiceSel').onchange = (e) => {
+    settings.voices[settings.lang] = (e.target as HTMLSelectElement).value;
+    setVoiceChoice(settings.lang, settings.voices[settings.lang]!);
+    save();
+  };
+  $('voiceTry').onclick = () => {
+    unlockSpeech();
+    speakSoon(entrySpeech(dex.species[(shownId ?? 25) - 1], settings.lang), settings.lang, 0);
+  };
+  if (speechSupported) speechSynthesis.addEventListener?.('voiceschanged', fillVoices);
   $<HTMLInputElement>('aiKey').onchange = (e) => {
     settings.aiKey = (e.target as HTMLInputElement).value.trim();
     save();
@@ -539,11 +573,29 @@ function wire() {
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopSpeaking();
+    if (document.hidden) silence();
   });
 }
 
+/** Fills the voice menu in Settings with the voices for the current language. */
+function fillVoices() {
+  const sel = $<HTMLSelectElement>('voiceSel');
+  const list = listVoices(settings.lang);
+  sel.replaceChildren();
+  const auto = el('option', '', `${t('voiceAuto', settings.lang)}${list[0] ? ` (${list[0].name})` : ''}`);
+  auto.value = '';
+  sel.append(auto);
+  for (const v of list) {
+    const o = el('option', '', `${v.name} · ${v.lang}`);
+    o.value = v.voiceURI;
+    sel.append(o);
+  }
+  sel.value = list.some((v) => v.voiceURI === settings.voices[settings.lang]) ? settings.voices[settings.lang]! : '';
+  $('voiceRow').hidden = !speechSupported;
+}
+
 async function init() {
+  for (const [l, uri] of Object.entries(settings.voices)) if (uri) setVoiceChoice(l as Lang, uri);
   placePanels();
   splitMq.addEventListener('change', placePanels);
   applyTexts();
