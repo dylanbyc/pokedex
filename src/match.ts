@@ -76,9 +76,8 @@ function similarity(a: string, b: string): number {
 
 /** Minimum similarity a name of this length needs before we trust it. */
 function threshold(len: number): number {
-  if (len <= 3) return 1; // Mew, Muk, 皮卡丘…: exact only
-  if (len <= 4) return 0.75;
-  if (len <= 6) return 0.8;
+  if (len <= 5) return 1; // Mew, Abra, Ralts, 皮卡丘…: short names are easy to hit by accident, so exact only
+  if (len <= 6) return 0.83;
   return 0.75;
 }
 
@@ -147,7 +146,7 @@ export class NameMatcher {
         if (!best || score > best.score) best = { id, score, text: key };
         continue;
       }
-      if (L < 4) continue; // short names must match exactly
+      if (threshold(L) >= 1) continue; // short names must match exactly
       for (let len = L - 1; len <= L + 1; len++) {
         for (let s = 0; s + len <= line.length; s++) {
           const sim = similarity(line.slice(s, s + len), key);
@@ -167,12 +166,19 @@ export class NameMatcher {
    * "Evolves from Charmander" are down-weighted.
    */
   matchLines(lines: OcrLine[], lang: CardLang): MatchResult | null {
-    const maxH = Math.max(1, ...lines.map((l) => l.height));
+    // Only real-looking text sets the size reference: background texture (wood grain,
+    // artwork) often comes back as tall boxes of junk characters.
+    const texty = lines.filter((l) => {
+      const chars = l.text.replace(/\s/g, '');
+      const good = chars.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
+      return chars.length >= 2 && good / chars.length >= 0.6;
+    });
+    const maxH = Math.max(1, ...texty.map((l) => l.height));
     let best: MatchResult | null = null;
     for (const line of lines) {
       const m = this.matchText(line.text, lang);
       if (!m) continue;
-      let score = m.score * (0.6 + 0.4 * (line.height / maxH));
+      let score = m.score * (0.7 + 0.3 * Math.min(1, line.height / maxH));
       if (/evolve|from|進化|进化|から/i.test(line.text)) score *= 0.6;
       if (!best || score > best.score) best = { ...m, score };
     }
@@ -191,6 +197,12 @@ export function detectSpecial(lines: OcrLine[]): SpecialCard | null {
   return null;
 }
 
+/** Latin names of 6+ letters at ≥95 %, or CJK names of 3+ characters read exactly. */
+export function isSureThing(m: MatchResult): boolean {
+  const cjk = /[^\x00-\x7f]/.test(m.text);
+  return cjk ? m.score >= 0.99 && m.text.length >= 3 : m.score >= 0.95 && m.text.length >= 6;
+}
+
 /** Collects votes across frames so one noisy OCR frame cannot trigger a result. */
 export class Voter {
   private history: (MatchResult | null)[] = [];
@@ -202,6 +214,11 @@ export class Voter {
   }
 
   push(m: MatchResult | null): number | null {
+    // A long name read (almost) perfectly in one frame is trustworthy on its own.
+    if (m && isSureThing(m)) {
+      this.history = [];
+      return m.id;
+    }
     this.history.push(m);
     if (this.history.length > this.size) this.history.shift();
     const totals = new Map<number, number>();

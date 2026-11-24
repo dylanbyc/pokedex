@@ -57,7 +57,14 @@ test('trainer and energy cards', () => {
 
 test('voter needs agreement across frames', () => {
   const v = new Voter(6, 1.5);
-  assert.equal(v.push({ id: 25, score: 0.9, text: '' }), null);
+  assert.equal(v.push({ id: 25, score: 0.9, text: 'pikach' }), null);
   assert.equal(v.push(null), null);
-  assert.equal(v.push({ id: 25, score: 0.9, text: '' }), 25);
+  assert.equal(v.push({ id: 25, score: 0.9, text: 'pikach' }), 25);
+});
+
+test('a long name read perfectly confirms in one frame; short ones need two', () => {
+  assert.equal(new Voter(6, 1.5).push({ id: 338, score: 1, text: 'solrock' }), 338);
+  assert.equal(new Voter(6, 1.5).push({ id: 151, score: 1, text: 'mew' }), null);
+  assert.equal(new Voter(6, 1.5).push({ id: 25, score: 1, text: '皮卡丘' }), 25);
+  assert.equal(new Voter(6, 1.5).push({ id: 655, score: 0.8, text: 'delphox' }), null);
 });

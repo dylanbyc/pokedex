@@ -21,7 +21,8 @@ const SCHEMA = {
 };
 
 const PROMPT =
-  'This is a photo of a Pokémon Trading Card Game card held up to a camera. ' +
+  'This is a camera photo of a Pokémon Trading Card Game card, possibly far away, at a slant, or among other cards ' +
+  '(if there are several, use the one nearest the centre). ' +
   'The card may be in English, Japanese or Chinese. Identify which Pokémon species the card shows. ' +
   'Use the printed card name first, then the artwork. Regional forms and card suffixes (V, VMAX, VSTAR, ex, GX, Radiant, Alolan…) ' +
   'should map to the base species. If it is a Trainer or Energy card, say so. ' +
@@ -30,11 +31,11 @@ const PROMPT =
 export async function identifyWithClaude(apiKey: string, card: HTMLCanvasElement): Promise<AiResult> {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   const data = card.toDataURL('image/jpeg', 0.85).split(',')[1];
-  const response = await client.beta.messages.create({
-    model: 'claude-opus-5-5',
-    max_tokens: 2048,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+  // Haiku 5.5: fast and very cheap for a quick look at one card. Low effort keeps
+  // thinking short; max_tokens leaves room for that thinking plus the small JSON answer.
+  const response = await client.messages.create({
+    model: 'claude-haiku-5-5',
+    max_tokens: 1024,
     output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
     messages: [
       {

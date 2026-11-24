@@ -1,6 +1,7 @@
 node_modules/
 dist/
 public/ocr/
+public/cv/
 .csv-cache/
 *.log
 .DS_Store

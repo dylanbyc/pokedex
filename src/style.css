@@ -187,6 +187,7 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .locked .guide .c { border-color: #57f28a; }
 .locked .guide { box-shadow: 0 0 0 100vmax rgba(5, 10, 20, .6); }
 
+.quad-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 .flash.go { animation: flash .45s ease-out; }
 @keyframes flash { 0% { opacity: .85; } 100% { opacity: 0; } }
