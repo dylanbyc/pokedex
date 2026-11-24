@@ -219,11 +219,31 @@ function showSpecial(kind: SpecialCard) {
   if (settings.voice) speak(t(kind, settings.lang), settings.lang);
 }
 
-function revealInfo() {
-  // On stacked (phone / portrait) layouts, bring the entry into view.
-  if (!matchMedia('(min-width: 900px) and (min-aspect-ratio: 1/1)').matches) {
-    $('rightHalf').scrollIntoView({ behavior: 'smooth', block: 'start' });
+// Wide landscape screens show two halves side by side. Everywhere else the
+// whole Pokédex fits one screen: the entry opens inside the main screen,
+// on top of the camera, and the blue keys sit under the controls.
+const splitMq = matchMedia('(min-width: 700px) and (min-aspect-ratio: 1/1)');
+
+function placePanels() {
+  const split = splitMq.matches;
+  document.body.classList.toggle('stacked', !split);
+  const info = $('info');
+  const keys = document.querySelector<HTMLElement>('.keys')!;
+  if (split) {
+    $('rightHalf').insertBefore(info, $('rightFoot'));
+    $('rightHalf').insertBefore(keys, $('rightFoot'));
+  } else {
+    $('screenStack').append(info);
+    $('leftHalf').append(keys);
   }
+}
+
+function revealInfo() {
+  $('screenStack').classList.add('show-info');
+}
+
+function hideInfo() {
+  $('screenStack').classList.remove('show-info');
 }
 
 // ---------- Scanning ----------
@@ -428,11 +448,18 @@ function step(delta: number) {
   if (next < 1) next = dex.species.length;
   if (next > dex.species.length) next = 1;
   showEntry(next, { announce: false });
+  revealInfo();
 }
 
 function wire() {
   $('startBtn').onclick = startScanning;
   $('againBtn').onclick = () => { beepTap(); stopSpeaking(); resetLock(); };
+  $('backCam').onclick = () => {
+    beepTap();
+    stopSpeaking();
+    hideInfo();
+    if (lockedId !== null) resetLock();
+  };
   $('scanBtn').onclick = () => {
     if (mode !== 'scanning') return void startScanning();
     beepTap();
@@ -517,6 +544,8 @@ function wire() {
 }
 
 async function init() {
+  placePanels();
+  splitMq.addEventListener('change', placePanels);
   applyTexts();
   wire();
   dex = await loadDex();

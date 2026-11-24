@@ -14,6 +14,7 @@ const S = {
   seen: { zh: '已发现', en: 'Discovered', ja: 'みつけた かず' },
   trainer: { zh: '这是一张训练家卡，不是宝可梦哦！', en: "That's a Trainer card, not a Pokémon!", ja: 'これは トレーナーズカード だよ！' },
   energy: { zh: '这是一张能量卡！', en: "That's an Energy card!", ja: 'これは エネルギーカード だよ！' },
+  backToCam: { zh: '返回相机', en: 'Back to camera', ja: 'カメラに もどる' },
   scanAgain: { zh: '再扫一张', en: 'Scan another', ja: 'もういちど' },
   search: { zh: '图鉴', en: 'Browse', ja: 'ずかん' },
   searchPh: { zh: '输入名字或编号', en: 'Name or number', ja: 'なまえ か ばんごう' },
