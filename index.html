@@ -144,6 +144,14 @@
         </fieldset>
         <label class="switch-row"><span data-t="autoScan">自动扫描</span><input type="checkbox" id="autoScan" /></label>
         <label class="switch-row"><span data-t="voice">语音朗读</span><input type="checkbox" id="voiceOn" /></label>
+        <fieldset id="voiceRow">
+          <legend data-t="voicePick">朗读的声音</legend>
+          <div class="voice-row">
+            <select id="voiceSel"></select>
+            <button class="try-btn" id="voiceTry" data-t="tryVoice">试听</button>
+          </div>
+          <p class="hint" data-t="voiceHint"></p>
+        </fieldset>
         <fieldset>
           <legend data-t="aiMode">AI 识别</legend>
           <input id="aiKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
