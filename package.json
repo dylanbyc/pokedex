@@ -1,0 +1,35 @@
+{
+  "name": "pokedex-scanner",
+  "version": "1.0.0",
+  "description": "A kid-friendly Pokédex that scans Pokémon cards with the camera (中文 / English / 日本語)",
+  "scripts": {
+    "postinstall": "node scripts/copy-ocr-assets.mjs",
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "data": "node scripts/build-data.mjs",
+    "test": "node --test test/*.test.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dylanbyc/pokedex.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dylanbyc/pokedex/issues"
+  },
+  "homepage": "https://github.com/dylanbyc/pokedex#readme",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.13.0",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@tesseract.js-data/chi_sim": "^1.0.0",
+    "@tesseract.js-data/chi_tra": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/jpn": "^1.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
+  "private": true,
+  "type": "module"
+}

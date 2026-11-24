@@ -1,0 +1,6 @@
+node_modules/
+dist/
+public/ocr/
+.csv-cache/
+*.log
+.DS_Store
