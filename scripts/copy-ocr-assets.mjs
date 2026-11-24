@@ -28,4 +28,7 @@ for (const lang of ['eng', 'jpn', 'chi_sim', 'chi_tra']) {
     path.join(out, 'lang', `${lang}.traineddata.gz`),
   );
 }
-console.log('OCR assets copied to public/ocr');
+// OpenCV.js finds and straightens cards in the camera image (loaded on demand).
+copy(path.join(nm, '@techstark/opencv-js/dist/opencv.js'), path.join(root, 'public', 'cv', 'opencv.js'));
+
+console.log('OCR and OpenCV assets copied to public/');

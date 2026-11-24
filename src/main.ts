@@ -1,8 +1,9 @@
 import './style.css';
 import { loadDex, artworkUrl, spriteUrl, TYPE_COLORS, type Dex, type Lang, type Species } from './data';
 import { t, statLabels, type Key } from './i18n';
-import { NameMatcher, Voter, detectSpecial, type CardLang, type SpecialCard } from './match';
-import { Camera, rotated } from './camera';
+import { NameMatcher, Voter, detectSpecial, isSureThing, type CardLang, type SpecialCard } from './match';
+import { Camera, rotated, type Rect } from './camera';
+import { loadCv, findCards, warpNameStrip, padQuad, type Quad } from './cardfinder';
 import { Ocr } from './ocr';
 import { speak, stopSpeaking, unlockSpeech, speechSupported, listVoices, setVoiceChoice } from './speech';
 import { beepFound, beepMiss, beepTap, unlockAudio } from './sound';
@@ -41,11 +42,19 @@ let dex: Dex;
 let matcher: NameMatcher;
 const camera = new Camera($<HTMLVideoElement>('video'));
 const ocr = new Ocr();
-const voter = new Voter(6, 1.5);
+const voter = new Voter(12, 1.5);
 // Cards are rarely held perfectly straight; successive frames try slightly different angles.
 const ANGLES = [0, 5, -5];
 let frameNo = 0;
 let specialVotes: SpecialCard[] = [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let cv: any = null; // OpenCV, once loaded: finds and straightens cards anywhere in view
+let searchingSince = 0; // when the scanner started looking for the current card
+let lastAiAt = 0;
+// The card outline that last produced a name-like read: the scanner keeps working on it.
+let focus: { quad: Quad; until: number } | null = null;
+const AUTO_AI_AFTER_MS = 2000; // with an API key: ask the AI if the scanner hasn't found it by then
+const AUTO_AI_EVERY_MS = 4000; // and at most this often
 
 type Mode = 'off' | 'scanning';
 let mode: Mode = 'off';
@@ -298,6 +307,9 @@ function resetLock() {
   missFrames = 0;
   $('camScreen').classList.remove('locked');
   $('againBtn').hidden = true;
+  searchingSince = Date.now();
+  focus = null;
+  drawQuad(null);
   if (mode === 'scanning') setStatus(t('aim', settings.lang));
 }
 
@@ -325,12 +337,90 @@ async function startScanning() {
   setStatus(t('loadingOcr', settings.lang));
   $('device').querySelector('.leds')!.classList.add('blink');
   try {
+    // OpenCV loads alongside the OCR engine; scanning starts without it and picks it up when ready.
+    loadCv().then((m) => { cv = m; });
     await ocr.prepare(settings.cardLang);
   } finally {
     $('device').querySelector('.leds')!.classList.remove('blink');
   }
   setStatus(t('aim', settings.lang));
+  searchingSince = Date.now();
   loop();
+}
+
+/** Draws the outline of the card the scanner is looking at (video pixel coords). */
+function drawQuad(q: Quad | null, locked = false) {
+  const c = $<HTMLCanvasElement>('quadCanvas');
+  const screen = $('camScreen');
+  const dpr = window.devicePixelRatio || 1;
+  const w = screen.clientWidth, h = screen.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+    c.width = Math.round(w * dpr);
+    c.height = Math.round(h * dpr);
+  }
+  const ctx = c.getContext('2d')!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!q) return;
+  ctx.beginPath();
+  q.forEach(([x, y], i) => {
+    const [ex, ey] = camera.toElement(screen, x, y);
+    if (i) ctx.lineTo(ex, ey);
+    else ctx.moveTo(ex, ey);
+  });
+  ctx.closePath();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = locked ? '#57f28a' : '#ffe14d';
+  ctx.shadowColor = 'rgba(0,0,0,.6)';
+  ctx.shadowBlur = 6;
+  ctx.setLineDash(locked ? [] : [14, 8]);
+  ctx.stroke();
+}
+
+/** Bounding box of a (padded) card outline, with a margin, clamped to the frame. */
+function boxAround(q: Quad): Rect {
+  const p = padQuad(q, 0.12);
+  const xs = p.map((v) => v[0]), ys = p.map((v) => v[1]);
+  const vw = camera.video.videoWidth, vh = camera.video.videoHeight;
+  const sx = Math.max(0, Math.min(...xs)), sy = Math.max(0, Math.min(...ys));
+  return { sx, sy, sw: Math.min(vw, Math.max(...xs)) - sx, sh: Math.min(vh, Math.max(...ys)) - sy };
+}
+
+/** Which outline to read this frame: the focused card if it's still there, else mostly the best one. */
+function pickQuad(quads: Quad[], n: number): Quad {
+  if (focus) {
+    const centre = (q: Quad) => [q.reduce((a, p) => a + p[0], 0) / 4, q.reduce((a, p) => a + p[1], 0) / 4];
+    const [fx, fy] = centre(focus.quad);
+    const near = quads
+      .map((q) => ({ q, d: Math.hypot(centre(q)[0] - fx, centre(q)[1] - fy) }))
+      .sort((a, b) => a.d - b.d)[0];
+    const size = Math.hypot(focus.quad[0][0] - focus.quad[2][0], focus.quad[0][1] - focus.quad[2][1]);
+    if (near.d < size * 0.25) return near.q;
+  }
+  // Every third frame, give the runners-up a turn.
+  return n % 3 === 2 && quads.length > 1 ? quads[1 + (Math.floor(n / 3) % (quads.length - 1))] : quads[0];
+}
+
+/** Finds cards in view; returns their outlines in video pixels (best first). */
+function locateCards(): Quad[] {
+  const view = camera.sourceRect($('camScreen'));
+  if (!cv || !view) return [];
+  const k = 480 / Math.max(view.sw, view.sh);
+  const small = camera.grab(view, Math.round(view.sw * k));
+  return findCards(cv, small).map((q) => q.map(([x, y]) => [view.sx + x / k, view.sy + y / k]) as Quad);
+}
+
+/** The card's name strip, straightened. Alternates plain / locally-thresholded images. */
+function straightenName(q: Quad, n: number): HTMLCanvasElement {
+  const box = boxAround(q);
+  const scale = Math.min(1, 1600 / Math.max(box.sw, box.sh));
+  const crop = camera.grab(box, Math.round(box.sw * scale));
+  const local = q.map(([x, y]) => [(x - box.sx) * scale, (y - box.sy) * scale]) as Quad;
+  const strip = warpNameStrip(cv, crop, local, n % 2 === 1);
+  // Every few frames also try a small tilt, for outlines that are slightly off.
+  const tilt = [0, 0, 3, -3][Math.floor(n / 2) % 4];
+  return rotated(strip, tilt);
 }
 
 async function scanOnce(): Promise<void> {
@@ -338,28 +428,51 @@ async function scanOnce(): Promise<void> {
   busy = true;
   $('lens').classList.add('busy');
   try {
-    // The name strip at the top of the card, with a little margin for wobbly hands.
-    const captured = camera.capture($('guide'), { x: -0.03, y: -0.04, w: 1.06, h: 0.24 }, 800, true);
-    if (!captured) return;
-    const strip = rotated(captured, ANGLES[frameNo++ % ANGLES.length]);
+    const n = frameNo++;
+    let strip: HTMLCanvasElement | null = null;
+    let quad: Quad | null = null;
+
+    // 1. Look for a card anywhere on screen (far away, slanted, not lined up with the frame).
+    //    While nothing promising has been read, every 4th frame reads the top of the frame
+    //    instead: that path is best for close-ups where the card's edges are out of view.
+    if (focus && n > focus.until) focus = null;
+    if (cv && (focus || n % 4 !== 3)) {
+      const quads = locateCards();
+      if (quads.length) {
+        quad = pickQuad(quads, n);
+        strip = straightenName(quad, n);
+      }
+      if (lockedId === null) drawQuad(focus ? quad : quads[0] ?? null);
+    }
+    // 2. Fallback: the name strip at the top of the guide frame, with a little margin.
+    if (!strip) {
+      const captured = camera.capture($('guide'), { x: -0.03, y: -0.04, w: 1.06, h: 0.24 }, 800, true);
+      if (!captured) return;
+      strip = rotated(captured, ANGLES[n % ANGLES.length]);
+    }
     if (location.hash === '#debug') (window as unknown as { __strip: string }).__strip = strip.toDataURL();
     const lines = await ocr.read(strip);
-    const match = matcher.matchLines(lines, settings.cardLang);
+    const special = detectSpecial(lines);
+    // A frame that looks like a Trainer/Energy card doesn't vote for a Pokémon.
+    const match = special ? null : matcher.matchLines(lines, settings.cardLang);
+    if ((match || special) && quad) focus = { quad, until: n + 8 }; // promising: stay on this card
     const confirmed = voter.push(match);
     const raw = lines.map((l) => l.text).join(' ').slice(0, 60);
 
-    if (confirmed) {
+    // Showing a Trainer/Energy card: only a near-certain name read may replace it.
+    const allowed = lockedId !== -1 || (match !== null && match.id === confirmed && isSureThing(match));
+    if (confirmed && allowed) {
       missFrames = 0;
       specialVotes = [];
       if (confirmed !== lockedId) {
         lockedId = confirmed;
+        if (quad) drawQuad(quad, true);
         celebrate(confirmed);
       }
       return;
     }
     if (lockedId) return; // keep showing the current card until a new one is found
 
-    const special = detectSpecial(lines);
     specialVotes = [...specialVotes, special].slice(-3).filter(Boolean) as SpecialCard[];
     if (special && specialVotes.filter((x) => x === special).length >= 2) {
       specialVotes = [];
@@ -370,8 +483,18 @@ async function scanOnce(): Promise<void> {
       revealInfo();
       return;
     }
+
+    // 3. With an API key: if the scanner hasn't got it after a moment, ask the AI automatically.
+    const now = Date.now();
+    if (settings.aiKey && now - searchingSince > AUTO_AI_AFTER_MS && now - lastAiAt > AUTO_AI_EVERY_MS && (quad || lines.length)) {
+      lastAiAt = now;
+      void scanWithAi(quad, true);
+      return;
+    }
+
     missFrames = match ? 0 : missFrames + 1;
     if (match) setStatus(t('scanning', settings.lang), raw);
+    else if (quad) setStatus(t('cardFound', settings.lang), raw);
     else if (missFrames > 6 && lines.length) setStatus(t('hold', settings.lang), raw);
     else setStatus(t('aim', settings.lang), raw);
   } catch (e) {
@@ -388,16 +511,22 @@ function loop() {
   run.finally(() => setTimeout(loop, 250));
 }
 
-async function scanWithAi() {
+async function scanWithAi(quad: Quad | null = null, auto = false) {
   if (aiBusy || !camera.running) return;
-  const card = camera.capture($('guide'), { x: -0.04, y: -0.03, w: 1.08, h: 1.06 }, 900);
-  if (!card) return;
+  // Send the card found on screen (with some surroundings), or else everything in view.
+  if (!quad && !auto) quad = locateCards()[0] ?? null;
+  const area = quad ? boxAround(quad) : camera.sourceRect($('camScreen'));
+  if (!area) return;
+  // Long side 768–1024 px: enough detail for the AI to read the name, small enough to send quickly.
+  const long = Math.min(1024, Math.max(768, Math.max(area.sw, area.sh)));
+  const card = camera.grab(area, Math.round(long * (area.sw / Math.max(area.sw, area.sh))));
   aiBusy = true;
   $('lens').classList.add('busy');
   setStatus(t('aiThinking', settings.lang));
   try {
     const { identifyWithClaude } = await import('./ai'); // loaded only when AI mode is used
     const r = await identifyWithClaude(settings.aiKey, card);
+    if (lockedId !== null && auto) return; // the scanner got there first
     if (r.kind === 'pokemon') {
       let id = r.dex_number && r.dex_number >= 1 && r.dex_number <= dex.species.length ? r.dex_number : null;
       if (r.english_name) {
@@ -418,11 +547,13 @@ async function scanWithAi() {
       setStatus(t(r.kind, settings.lang));
       return;
     }
-    beepMiss();
-    setStatus(t('aiFailed', settings.lang));
+    if (!auto) {
+      beepMiss();
+      setStatus(t('aiFailed', settings.lang));
+    }
   } catch (e) {
     console.error(e);
-    beepMiss();
+    if (!auto) beepMiss();
     setStatus(t('aiFailed', settings.lang), e instanceof Error ? e.message : String(e));
   } finally {
     aiBusy = false;
@@ -489,6 +620,7 @@ function wire() {
     resetLock();
     if (settings.aiKey) scanWithAi();
     else scanOnce();
+    lastAiAt = Date.now();
   };
   $('dLeft').onclick = () => step(-1);
   $('dUp').onclick = () => step(-1);
@@ -595,6 +727,7 @@ function fillVoices() {
 }
 
 async function init() {
+  if (location.hash === '#debug') Object.assign(window, { __dex: { loadCv, findCards, warpNameStrip, state: () => ({ frameNo, busy, aiBusy, lockedId, focus: !!focus, specialVotes, mode }) } });
   for (const [l, uri] of Object.entries(settings.voices)) if (uri) setVoiceChoice(l as Lang, uri);
   placePanels();
   splitMq.addEventListener('change', placePanels);
